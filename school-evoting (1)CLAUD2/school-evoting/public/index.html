@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>School Election</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--tx:#1b2333;--mut:#667089;--pri:#2f5bea;--bd:#e1e6f0;--ok:#16884a;--err:#c62d2d}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1420;--card:#192031;--tx:#e8ecf5;--mut:#9aa5bd;--pri:#6b8cff;--bd:#2a3349;--ok:#3ecf7e;--err:#ff6b6b}}
+*{box-sizing:border-box}body{margin:0;font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{padding:18px 20px;text-align:center;font-weight:700;font-size:20px}
+main{max-width:720px;margin:0 auto;padding:0 16px 48px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:20px;margin-bottom:16px}
+h2{margin:0 0 4px;font-size:18px}h3{margin:16px 0 8px;font-size:16px}.mut{color:var(--mut);font-size:14px}
+input,select,textarea{width:100%;padding:11px 12px;margin:6px 0;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit}
+button{padding:11px 18px;border:0;border-radius:10px;background:var(--pri);color:#fff;font:inherit;font-weight:600;cursor:pointer;margin:4px 6px 4px 0}
+button.sec{background:transparent;color:var(--pri);border:1px solid var(--pri)}button.del{background:var(--err);padding:5px 10px;font-size:13px}
+.cand{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--bd);border-radius:10px;margin:8px 0;cursor:pointer}
+.cand.sel{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 10%,transparent)}
+.cand input{width:auto;margin:0}.cand img{width:48px;height:48px;border-radius:50%;object-fit:cover}
+.msg{padding:10px 14px;border-radius:10px;margin:10px 0}.msg.e{background:color-mix(in srgb,var(--err) 15%,transparent);color:var(--err)}.msg.o{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px}.stat{text-align:center;padding:12px;border:1px solid var(--bd);border-radius:10px}.stat b{display:block;font-size:22px}
+.bar{height:10px;border-radius:5px;background:var(--bd);overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd);font-size:14px}
+</style></head><body>
+<header id="title">School Election</header><main id="app"></main>
+<script>
+const $app=document.getElementById("app"),ADMIN=new URLSearchParams(location.search).has("admin");
+const el=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,v]of Object.entries(a))x.startsWith("on")?e.addEventListener(x.slice(2),v):x==="class"?e.className=v:e.setAttribute(x,v);e.append(...k.flat().filter(x=>x!=null&&x!==false));return e};
+const api=async(p,m="GET",b)=>{const r=await fetch("/api/"+p,{method:m,headers:{"Content-Type":"application/json"},body:b?JSON.stringify(b):undefined});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Something went wrong");return d};
+const show=(...n)=>{$app.replaceChildren(...n.flat())};
+const note=(t,ok)=>{const n=el("div",{class:"msg "+(ok?"o":"e")},t);setTimeout(()=>n.remove(),6000);return n};
+let cfg={};
+async function init(){try{cfg=await api("config");document.getElementById("title").textContent=cfg.school_name;document.title=cfg.school_name}catch{}ADMIN?adminLogin():home()}
+
+// ---------- student ----------
+function home(){
+ const id=el("input",{placeholder:"Student ID",autocomplete:"username"}),pw=el("input",{type:"password",placeholder:"Password",autocomplete:"current-password"}),box=el("div");
+ const go=async()=>{try{const u=await api("login","POST",{student_id:id.value,password:pw.value});u.has_voted?done("You have already voted. Thank you!"):ballot()}catch(e){box.replaceChildren(note(e.message))}};
+ pw.addEventListener("keydown",e=>e.key==="Enter"&&go());
+ show(el("div",{class:"card"},el("h2",{},"Student login"),el("p",{class:"mut"},cfg.election_open?"Voting is open.":"Voting is currently closed."),id,pw,box,el("button",{onclick:go},"Log in"),cfg.results_published&&el("button",{class:"sec",onclick:()=>results(false)},"View results")));
+}
+async function ballot(){
+ let d;try{d=await api("ballot")}catch(e){return show(el("div",{class:"card"},el("p",{},e.message),el("button",{class:"sec",onclick:logout},"Back")))}
+ const sel={};d.positions.forEach(p=>sel[p.id]=[]);
+ const cards=d.positions.map(p=>{
+  const list=el("div");
+  p.candidates.forEach(c=>{
+   const inp=el("input",{type:p.max_choices===1?"radio":"checkbox",name:"p"+p.id});
+   const row=el("label",{class:"cand"},inp,c.photo_url&&el("img",{src:c.photo_url,alt:""}),el("div",{},el("b",{},c.name),c.bio&&el("div",{class:"mut"},c.bio)));
+   inp.addEventListener("change",()=>{
+    if(p.max_choices===1)sel[p.id]=[c.id];
+    else if(inp.checked){if(sel[p.id].length>=p.max_choices){inp.checked=false;return}sel[p.id].push(c.id)}
+    else sel[p.id]=sel[p.id].filter(x=>x!==c.id);
+    list.querySelectorAll(".cand").forEach(r=>r.classList.toggle("sel",r.querySelector("input").checked));
+   });list.append(row);
+  });
+  return el("div",{class:"card"},el("h2",{},p.name),el("p",{class:"mut"},`Choose ${p.max_choices}`),list);
+ });
+ const box=el("div");
+ const submit=async()=>{
+  const bad=d.positions.find(p=>sel[p.id].length!==p.max_choices);
+  if(bad)return box.replaceChildren(note(`Select ${bad.max_choices} for "${bad.name}"`));
+  const summary=d.positions.map(p=>p.name+": "+p.candidates.filter(c=>sel[p.id].includes(c.id)).map(c=>c.name).join(", ")).join("\n");
+  if(!confirm("Confirm your ballot? You cannot change it.\n\n"+summary))return;
+  try{await api("vote","POST",{selections:sel});done("Your vote has been recorded. Thank you!")}catch(e){box.replaceChildren(note(e.message))}
+ };
+ show(el("div",{class:"card"},el("b",{},"Welcome, "+d.voter.name),el("button",{class:"sec",onclick:logout},"Log out")),cards,box,el("button",{onclick:submit},"Submit ballot"));
+}
+function done(m){show(el("div",{class:"card"},el("h2",{},"✅ "+m),el("button",{onclick:logout},"Log out")))}
+async function logout(){await api("logout","POST",{});location.reload()}
+async function results(admin){
+ try{const d=await api("results");
+  show(el("div",{class:"card"},el("h2",{},"Results"),el("p",{class:"mut"},`Turnout: ${d.voted}/${d.total} (${d.turnout}%)`)),
+   d.results.map(p=>{const max=Math.max(1,...p.candidates.map(c=>c.votes));return el("div",{class:"card"},el("h3",{},p.name),p.candidates.map(c=>el("div",{},el("div",{class:"row"},el("span",{},c.name),el("b",{},c.votes)),el("div",{class:"bar"},el("i",{style:`width:${c.votes*100/max}%`}))))) }),
+   el("button",{class:"sec",onclick:()=>admin?adminHome():location.reload()},"Back"));
+ }catch(e){show(el("div",{class:"card"},note(e.message),el("button",{class:"sec",onclick:()=>location.reload()},"Back")))}
+}
+
+// ---------- admin ----------
+function adminLogin(){
+ const pw=el("input",{type:"password",placeholder:"Admin password"}),box=el("div");
+ const go=async()=>{try{await api("admin/login","POST",{password:pw.value});adminHome()}catch(e){box.replaceChildren(note(e.message))}};
+ pw.addEventListener("keydown",e=>e.key==="Enter"&&go());
+ show(el("div",{class:"card"},el("h2",{},"Admin login"),pw,box,el("button",{onclick:go},"Log in")));
+}
+async function adminHome(){
+ let s,d;try{[s,d]=await Promise.all([api("admin/summary"),api("admin/data")])}catch{return adminLogin()}
+ const box=el("div"),reload=()=>adminHome();
+ const act=async(fn,msg)=>{try{await fn();if(msg)alert(msg);reload()}catch(e){box.replaceChildren(note(e.message))}};
+ const setting=b=>act(()=>api("admin/settings","POST",b));
+ const pName=el("input",{placeholder:"Position name (e.g. Head Boy)"}),pMax=el("input",{type:"number",min:1,max:10,value:1});
+ const cPos=el("select",{},d.positions.map(p=>el("option",{value:p.id},p.name))),cName=el("input",{placeholder:"Candidate name"}),cBio=el("input",{placeholder:"Short bio (optional)"}),cPhoto=el("input",{placeholder:"Photo URL https://... (optional)"});
+ const vId=el("input",{placeholder:"Student ID"}),vName=el("input",{placeholder:"Full name"}),vPw=el("input",{placeholder:"Password (6+ chars)"});
+ const bulk=el("textarea",{rows:5,placeholder:"One per line:  studentID,Full Name,password"});
+ show(
+  el("div",{class:"card"},el("h2",{},"Dashboard"),el("div",{class:"stats"},[["Voters",s.voters],["Voted",s.voted],["Turnout",s.turnout+"%"],["Positions",s.positions],["Candidates",s.candidates]].map(([a,b])=>el("div",{class:"stat"},el("b",{},b),a))),
+   el("p",{},"Election: ",el("b",{},s.election_open?"OPEN":"CLOSED"),"  •  Results: ",el("b",{},s.results_published?"PUBLISHED":"HIDDEN")),
+   el("button",{onclick:()=>setting({election_open:!s.election_open})},s.election_open?"Close election":"Open election"),
+   el("button",{class:"sec",onclick:()=>setting({results_published:!s.results_published})},s.results_published?"Hide results":"Publish results"),
+   el("button",{class:"sec",onclick:()=>results(true)},"View results"),el("button",{class:"sec",onclick:logout},"Log out"),box),
+  el("div",{class:"card"},el("h2",{},"Add position"),pName,pMax,el("button",{onclick:()=>act(()=>api("admin/position","POST",{name:pName.value,max_choices:+pMax.value}))},"Add")),
+  el("div",{class:"card"},el("h2",{},"Add candidate"),cPos,cName,cBio,cPhoto,el("button",{onclick:()=>act(()=>api("admin/candidate","POST",{position_id:+cPos.value,name:cName.value,bio:cBio.value,photo_url:cPhoto.value}))},"Add")),
+  el("div",{class:"card"},el("h2",{},"Ballot"),d.positions.length?d.positions.map(p=>el("div",{},el("div",{class:"row"},el("b",{},`${p.name} (choose ${p.max_choices})`),el("button",{class:"del",onclick:()=>confirm("Delete position and its candidates?")&&act(()=>api("admin/position/"+p.id,"DELETE"))},"Delete")),d.candidates.filter(c=>c.position_id===p.id).map(c=>el("div",{class:"row"},el("span",{},"• "+c.name),el("button",{class:"del",onclick:()=>act(()=>api("admin/candidate/"+c.id,"DELETE"))},"✕"))))):el("p",{class:"mut"},"No positions yet.")),
+  el("div",{class:"card"},el("h2",{},"Add voter"),vId,vName,vPw,el("button",{onclick:()=>act(()=>api("admin/voter","POST",{student_id:vId.value,name:vName.value,password:vPw.value}),"Voter added")},"Add voter"),
+   el("h3",{},"Bulk import"),bulk,el("button",{onclick:()=>{const voters=bulk.value.split("\n").map(l=>l.split(",").map(x=>x.trim())).filter(a=>a.length>=3).map(([student_id,name,...r])=>({student_id,name,password:r.join(",")}));act(async()=>{const r=await api("admin/voter","POST",{voters});alert(`Added ${r.added}. Skipped: ${r.skipped.join(", ")||"none"}`)})}},"Import")),
+  el("div",{class:"card"},el("h2",{},"Reset a voter's password"),(()=>{const i=el("input",{placeholder:"Student ID"}),p=el("input",{placeholder:"New password"});return el("div",{},i,p,el("button",{onclick:()=>act(()=>api("admin/voter/reset","POST",{student_id:i.value,password:p.value}),"Password reset")},"Reset"))})()),
+  el("div",{class:"card"},el("h2",{},"Audit log"),d.logs.map(l=>el("div",{class:"row"},el("span",{},`${l.actor}: ${l.action}`),el("span",{class:"mut"},l.created_at))))
+ );
+}
+init();
+</script></body></html>
